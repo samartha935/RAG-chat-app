@@ -1,5 +1,7 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+**Smart Document Analyzer (RAG)** — the **master plan** (north star) is [docs/RAG-BUILD-PLAN.md](docs/RAG-BUILD-PLAN.md): RAG stack, auth, rate limits, PDF caps, **TanStack Query** + **React Hook Form** where appropriate, and a **policy to ask before adding any other npm dependency**. Derive smaller implementation plans from that doc.
+
 ## Getting Started
 
 First, run the development server:
