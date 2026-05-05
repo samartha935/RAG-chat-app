@@ -121,12 +121,12 @@ export default function AuthTestPage() {
             {isPending
               ? "…"
               : JSON.stringify(
-                  session
-                    ? { user: session.user, session: session.session }
-                    : null,
-                  null,
-                  2,
-                )}
+                session
+                  ? { user: session.user, session: session.session }
+                  : null,
+                null,
+                2,
+              )}
           </pre>
           {actionError ? (
             <p className="text-destructive text-xs">{actionError}</p>
