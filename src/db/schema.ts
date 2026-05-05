@@ -14,6 +14,9 @@ const vector384 = customType<{ data: number[]; driverData: string }>({
   dataType() {
     return "vector(384)";
   },
+  toDriver(value: number[]): string {
+    return `[${value.join(",")}]`;
+  },
 });
 
 // --- Better Auth (matches `pnpm dlx @better-auth/cli generate` for this config) ---
@@ -119,6 +122,8 @@ export const document = pgTable(
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull().default("application/pdf"),
     storagePath: text("storage_path").notNull(),
+    /** Original PDF size in bytes (for per-user storage quota). */
+    sizeBytes: integer("size_bytes").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("document_conversation_id_idx").on(table.conversationId)],
@@ -152,12 +157,31 @@ export const message = pgTable(
   (table) => [index("message_conversation_id_idx").on(table.conversationId)],
 );
 
+/** Per-user counters for POST /api/chat (Gemini) — fixed windows in UTC. */
+export const chatRateLimitState = pgTable("chat_rate_limit_state", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  minuteBucketStart: timestamp("minute_bucket_start", {
+    withTimezone: true,
+    mode: "date",
+  }).notNull(),
+  minuteCount: integer("minute_count").notNull().default(0),
+  /** UTC calendar day as YYYY-MM-DD. */
+  dayUtc: text("day_utc").notNull(),
+  dayCount: integer("day_count").notNull().default(0),
+});
+
 // --- Relations ---
 
-export const userRelations = relations(user, ({ many }) => ({
+export const userRelations = relations(user, ({ many, one }) => ({
   sessions: many(session),
   accounts: many(account),
   conversations: many(conversation),
+  chatRateLimitState: one(chatRateLimitState, {
+    fields: [user.id],
+    references: [chatRateLimitState.userId],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -202,5 +226,12 @@ export const messageRelations = relations(message, ({ one }) => ({
   conversation: one(conversation, {
     fields: [message.conversationId],
     references: [conversation.id],
+  }),
+}));
+
+export const chatRateLimitStateRelations = relations(chatRateLimitState, ({ one }) => ({
+  user: one(user, {
+    fields: [chatRateLimitState.userId],
+    references: [user.id],
   }),
 }));

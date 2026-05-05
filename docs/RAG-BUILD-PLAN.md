@@ -139,7 +139,7 @@ flowchart LR
 - **Sign-in:** **Google OAuth only** — no email/password or other social providers for this project.
 - **Library:** **[Better Auth](https://www.better-auth.com/)** with **[Drizzle adapter](https://www.better-auth.com/docs/adapters/drizzle)** on the **same Postgres** as RAG data.
 - **Data ownership:** RAG entities that represent a user’s workspace (e.g. **conversations**) must include **`userId`** (FK to Better Auth `user.id`). List/create/patch/delete APIs must scope by the authenticated user.
-- **Protection:** **`src/middleware.ts`** — protect `/chat/*` and `/api/*` except `/api/auth/*`. **Defense in depth:** each sensitive handler also resolves session (e.g. `auth.api.getSession({ headers })`) and returns **401** if absent.
+- **Protection:** **`src/middleware.ts`** — should only have a simple check for the session cookie to quickly redirect users if they don't have it (e.g., for `/chat/*` and `/api/*`). **The main auth check must happen at the API level (route handlers or server components) for every page/route** by actually validating the session (e.g., `auth.api.getSession({ headers })`) and returning **401** (or redirecting) if absent. Do not do full auth validation in middleware.
 
 ### Files (add to repo layout)
 
@@ -178,9 +178,12 @@ Gemini **free-tier limits apply to the API key / project**, not to individual br
 
 ## PDF upload size limit
 
-- **Env:** `MAX_UPLOAD_BYTES` (or `MAX_PDF_MB` converted to bytes). Suggested default **5–10 MB** for demos — keeps RAM predictable when parsing with `pdf-parse` on a small VPS.
-- **Server:** In `/api/upload`, reject before heavy work if `file.size > MAX_UPLOAD_BYTES` → **413 Payload Too Large**.
-- **Client:** `UploadZone` should show the same cap (disable or warn before upload).
+- **Per file — Env:** `MAX_UPLOAD_BYTES` (or `MAX_PDF_MB` converted to bytes). Suggested default **5–10 MB** for demos — keeps RAM predictable when parsing with `pdf-parse` on a small VPS.
+- **Per file — Server:** In `/api/upload`, reject before heavy work if `file.size > MAX_UPLOAD_BYTES` → **413 Payload Too Large** (e.g. error `file_too_large`).
+- **Per user (total storage) — Env:** `MAX_STORAGE_BYTES_PER_USER` — cap on **sum of stored PDF bytes** for the signed-in user across all conversations (VPS-local disk; no object storage for this demo). Suggested default on the order of **tens of MiB**; tune to VPS size and expected number of users.
+- **Per user — Server:** Persist **`size_bytes`** (or equivalent) on each **document** row. Before accepting an upload, after the per-file check, verify `sum(existing size_bytes for user) + file.size <= MAX_STORAGE_BYTES_PER_USER` (join **document** → **conversation** on `userId`). If over quota → **403** with a clear error (e.g. `storage_quota_exceeded`) so clients can tell it apart from a single-file limit.
+- **Deletes:** When a conversation (or document) is removed, **delete the file on disk** under `UPLOAD_DIR` so quota and storage stay consistent.
+- **Client:** `UploadZone` / `PdfUploadZone` should show the per-file cap; optionally show **used / max** from `GET /api/usage` (or document aggregates).
 
 ---
 
@@ -239,7 +242,7 @@ src/
 ### Database schema (Drizzle + pgvector)
 
 - **Better Auth** tables (per upstream + Drizzle plugin): e.g. user, session, account, verification — **do not hand-roll incompatible shapes**; generate or copy from [Better Auth Drizzle docs](https://www.better-auth.com/docs/adapters/drizzle).
-- **RAG tables:** documents, chunks (`vector(384)`), conversations, messages (exact names can match your implementation plan) — all **owned** where applicable via **`userId`** on conversations (and document linkage as designed).
+- **RAG tables:** documents (including **`size_bytes`** for per-user storage totals), chunks (`vector(384)`), conversations, messages (exact names can match your implementation plan) — all **owned** where applicable via **`userId`** on conversations (and document linkage as designed).
 - **Indexes:** HNSW (or equivalent) on `chunks.embedding` after bulk load for ANN search.
 
 ### Next.js 16
@@ -252,7 +255,7 @@ src/
 
 ### PDF serving
 
-Saved files under `uploads/`; `/api/pdf/[filename]` streams to **react-pdf** (authorize: same user as document owner).
+Files are stored **on the VPS filesystem** under `UPLOAD_DIR` (e.g. `./uploads`), not in object storage — acceptable for portfolio/demo scope. `/api/pdf/[filename]` streams to **react-pdf** (authorize: same user as document owner).
 
 ---
 
@@ -264,7 +267,7 @@ Use this as **order of dependencies**, not a single sprint mandate. **Auth and s
 
 - Docker + `docker-compose up -d`; Gemini + Google OAuth credentials in hand
 - Drizzle + `drizzle.config.ts`; schema = **Better Auth + RAG + rate usage**; migrations
-- `.env.local`: `DATABASE_URL`, `GEMINI_API_KEY`, Better Auth + Google vars, `MAX_UPLOAD_BYTES`, rate limit vars
+- `.env.local`: `DATABASE_URL`, `GEMINI_API_KEY`, Better Auth + Google vars, `MAX_UPLOAD_BYTES`, `MAX_STORAGE_BYTES_PER_USER`, rate limit vars
 - `lib/auth.ts`, `app/api/auth/[...all]/route.ts`, `middleware.ts` smoke-test (sign-in redirects)
 
 **Day 2 — Embedder + chunker**
@@ -337,6 +340,7 @@ GEMINI_MODEL=gemini-2.0-flash   # example; match AI Studio + rate-limit docs
 # Uploads
 UPLOAD_DIR=./uploads
 MAX_UPLOAD_BYTES=10485760       # e.g. 10 MiB; tune down for 2GB VPS
+MAX_STORAGE_BYTES_PER_USER=52428800   # e.g. 50 MiB total PDFs per user on disk
 
 # Better Auth + Google OAuth
 BETTER_AUTH_SECRET=             # random secret

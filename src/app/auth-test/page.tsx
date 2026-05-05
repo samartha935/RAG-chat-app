@@ -12,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PdfUploadZone } from "@/components/pdf-upload-zone";
 import { authClient } from "@/lib/auth-client";
 
 export default function AuthTestPage() {
@@ -133,6 +134,8 @@ export default function AuthTestPage() {
           ) : null}
         </CardFooter>
       </Card>
+
+      <PdfUploadZone />
 
       <Card>
         <CardHeader className="pb-2">

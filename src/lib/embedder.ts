@@ -43,7 +43,7 @@ class EmbedderQueue {
           } else {
             currentTask.resolve(parsed);
           }
-        } catch (e) {
+        } catch {
           currentTask.reject(new Error("Failed to parse embedder output: " + line));
         } finally {
           this.queue.shift(); // Remove the completed task

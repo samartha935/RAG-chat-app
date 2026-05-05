@@ -20,6 +20,9 @@
 # production
 /build
 
+# uploaded PDFs (VPS-local demo storage)
+/uploads
+
 # misc
 .DS_Store
 *.pem

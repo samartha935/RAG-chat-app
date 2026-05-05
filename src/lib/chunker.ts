@@ -46,7 +46,7 @@ export function chunkText(
     }
 
     const combinedChunks: string[] = [];
-    let currentChunk: string[] = [];
+    const currentChunk: string[] = [];
     let currentLength = 0;
 
     for (const s of goodSplits) {
