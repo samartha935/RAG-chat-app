@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { ModelMessage, UIMessage } from "ai";
-import { convertToModelMessages, streamText } from "ai";
+import { convertToModelMessages, generateText } from "ai";
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 import { z } from "zod";
@@ -46,7 +46,7 @@ function getLastUserText(messages: ModelMessage[]): string {
 
 function buildSystemPrompt(sources: RagSource[]): string {
   if (sources.length === 0) {
-    return `You are a helpful assistant for document Q&A. This conversation has no indexed document chunks yet — answer briefly from general knowledge if appropriate, and say there are no uploaded documents to cite.`;
+    return `You are a helpful AI assistant. This conversation has no indexed PDF context yet, so answer normally from general knowledge when appropriate. If the user asks about an uploaded document, explain that there are no uploaded documents available to cite.`;
   }
 
   const blocks = sources.map(
@@ -54,11 +54,74 @@ function buildSystemPrompt(sources: RagSource[]): string {
       `[${i + 1}] (document: ${s.filename}, chunk #${s.chunkIndex})\n${s.content}`,
   );
 
-  return `You are a helpful assistant answering questions using ONLY the retrieved excerpts below when they are relevant. If the excerpts do not contain the answer, say so clearly. Cite sources using bracket numbers like [1] that match the excerpt labels.
+  return `You are a helpful AI assistant with optional PDF context.
+
+Use the retrieved PDF excerpts when they are relevant to the user's question. When you rely on PDF content, cite the matching excerpts using bracket numbers like [1].
+
+If the user's question is general, conversational, or not related to the uploaded PDF, answer normally from general knowledge without forcing PDF citations.
+
+If the user asks about the PDF but the retrieved excerpts do not contain the answer, say that the uploaded document context does not include enough information, then provide any clearly-labeled general context only if it is useful.
 
 --- Retrieved excerpts ---
 
 ${blocks.join("\n\n")}`;
+}
+
+function isQuotaLikeError(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return (
+    /\b429\b/.test(text) ||
+    text.toLowerCase().includes("quota") ||
+    text.toLowerCase().includes("resource_exhausted") ||
+    text.toLowerCase().includes("rate limit")
+  );
+}
+
+function buildPrototypeFallback(lastUserText: string, sources: RagSource[]): string {
+  if (sources.length === 0) {
+    return [
+      "Gemini is currently unavailable because the API key or selected model is hitting quota/rate limits.",
+      "For the prototype, I saved your message, but there is no indexed PDF context yet to summarize locally.",
+      `Your question was: "${lastUserText}"`,
+    ].join("\n\n");
+  }
+
+  const excerpts = sources
+    .slice(0, 3)
+    .map(
+      (s, i) =>
+        `[${i + 1}] ${s.filename}, chunk ${s.chunkIndex}\n${s.content.slice(0, 700)}`,
+    )
+    .join("\n\n");
+
+  return [
+    "Gemini is currently unavailable because the API key or selected model is hitting quota/rate limits.",
+    "For the prototype, here are the most relevant retrieved PDF excerpts so you can still inspect the document context:",
+    excerpts,
+  ].join("\n\n");
+}
+
+function textStreamResponse(text: string, sources: unknown[]) {
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(`${JSON.stringify({ type: "text-delta", delta: text })}\n`),
+        );
+        controller.enqueue(
+          encoder.encode(`${JSON.stringify({ metadata: { sources } })}\n`),
+        );
+        controller.close();
+      },
+    }),
+    {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    },
+  );
 }
 
 export async function POST(request: Request) {
@@ -173,32 +236,30 @@ export async function POST(request: Request) {
 
   const assistantMessageId = uuidv4();
 
-  const result = streamText({
-    model,
-    system,
-    messages: modelMessages,
-    onFinish: async ({ text }) => {
-      try {
-        await db.insert(message).values({
-          id: assistantMessageId,
-          conversationId,
-          role: "assistant",
-          content: text,
-        });
-      } catch (err) {
-        console.error("[chat] failed to persist assistant message", err);
-      }
-    },
+  let assistantText: string;
+  try {
+    const result = await generateText({
+      model,
+      system,
+      messages: modelMessages,
+      /** Retrying on 429/quota burns attempts and delays a clear fallback. */
+      maxRetries: 0,
+    });
+    assistantText = result.text;
+  } catch (error) {
+    if (!isQuotaLikeError(error)) {
+      throw error;
+    }
+    console.warn("[chat] Gemini quota/rate-limit fallback", error);
+    assistantText = buildPrototypeFallback(lastUserText, sources);
+  }
+
+  await db.insert(message).values({
+    id: assistantMessageId,
+    conversationId,
+    role: "assistant",
+    content: assistantText,
   });
 
-  return result.toUIMessageStreamResponse({
-    originalMessages: rawMessages as unknown as UIMessage[],
-    generateMessageId: () => assistantMessageId,
-    messageMetadata: ({ part }) => {
-      if (part.type === "finish") {
-        return { sources: sourcesPayload };
-      }
-      return undefined;
-    },
-  });
+  return textStreamResponse(assistantText, sourcesPayload);
 }
