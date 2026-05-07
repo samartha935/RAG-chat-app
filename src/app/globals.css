@@ -98,3 +98,28 @@
     @apply font-sans;
   }
 }
+
+/* ── PDF viewer: scrollable continuous pages ── */
+.pdf-scroll-container .react-pdf__Page {
+  margin-bottom: 4px;
+}
+
+/* ── RAG source highlight in PDF text layer ── */
+.rag-highlight {
+  background: rgba(250, 204, 21, 0.45) !important;
+  border-radius: 2px;
+  outline: 2px solid rgba(250, 204, 21, 0.7);
+  outline-offset: 1px;
+  animation: rag-pulse 1.8s ease-in-out 3;
+}
+
+@keyframes rag-pulse {
+  0%, 100% {
+    background: rgba(250, 204, 21, 0.45);
+    outline-color: rgba(250, 204, 21, 0.7);
+  }
+  50% {
+    background: rgba(250, 204, 21, 0.75);
+    outline-color: rgba(250, 204, 21, 1);
+  }
+}

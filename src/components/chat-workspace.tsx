@@ -10,11 +10,13 @@ import {
   PanelLeftClose,
   Send,
   Trash2,
+  Upload,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import type { DragEvent } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { PdfUploadZone } from "@/components/pdf-upload-zone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +40,7 @@ const PdfDocumentViewer = dynamic(
   {
     ssr: false,
     loading: () => (
-      <p className="p-6 text-center text-sm text-slate-600">Loading PDF viewer</p>
+      <p className="p-6 text-center text-sm text-slate-600">Loading PDF viewer…</p>
     ),
   },
 );
@@ -138,6 +140,8 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
   const [streaming, setStreaming] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [jumpSource, setJumpSource] = useState<RagSource | null>(null);
+  const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
+  const dragCounter = useRef(0);
 
   const conversationsQuery = useQuery({
     queryKey: ["conversations"],
@@ -302,8 +306,78 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
     }
   }, [ensureConversation, messages, prompt, queryClient, streaming]);
 
+  // ---- Global drag-and-drop handlers ----
+  const globalUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const activeId = conversationId !== "new" ? conversationId : await ensureConversation();
+      const fd = new FormData();
+      fd.set("conversationId", activeId);
+      fd.set("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string; conversationId?: string; chunkCount?: number };
+      if (!res.ok) throw new Error(data.message ?? data.error ?? `Upload failed (${res.status})`);
+      return { ...data, conversationId: data.conversationId ?? activeId };
+    },
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["usage"] }),
+        queryClient.invalidateQueries({ queryKey: ["documents", data.conversationId] }),
+      ]);
+    },
+  });
+
+  const onGlobalDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragCounter.current += 1;
+    if (dragCounter.current === 1) setIsDraggingGlobal(true);
+  }, []);
+
+  const onGlobalDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const onGlobalDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDraggingGlobal(false);
+    }
+  }, []);
+
+  const onGlobalDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      dragCounter.current = 0;
+      setIsDraggingGlobal(false);
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) { setChatError("Only PDF files can be uploaded."); return; }
+      void globalUploadMutation.mutateAsync(file);
+    },
+    [globalUploadMutation],
+  );
+
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div
+      className="flex h-screen overflow-hidden bg-background text-foreground relative"
+      onDragEnter={onGlobalDragEnter}
+      onDragOver={onGlobalDragOver}
+      onDragLeave={onGlobalDragLeave}
+      onDrop={onGlobalDrop}
+    >
+      {/* Full-screen drag overlay */}
+      {isDraggingGlobal && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-md border-2 border-dashed border-primary/60 rounded-2xl pointer-events-none">
+          <div className="flex size-20 items-center justify-center rounded-full border border-primary/40 bg-primary/15">
+            <Upload className="size-9 text-primary" />
+          </div>
+          <p className="text-lg font-semibold text-primary">Drop your PDF here</p>
+          <p className="text-sm text-muted-foreground">Release to upload and index</p>
+        </div>
+      )}
       <aside
         className={`fixed inset-y-0 left-0 z-40 w-[280px] border-r border-white/10 bg-[#111118]/95 p-4 backdrop-blur transition-transform lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -587,48 +661,26 @@ function PdfPreview({
   document: DocumentSummary | null;
   jumpSource: RagSource | null;
 }) {
-  const [page, setPage] = useState(1);
-  const [numPages, setNumPages] = useState<number | null>(null);
   const url = document ? `/api/pdf/${document.storagePath}` : null;
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-4">
+    <div className="min-h-0 flex-1 overflow-hidden p-4">
       {document && url ? (
-        <div className="space-y-3">
+        <div className="flex h-full flex-col gap-3">
           <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[#0e0d15] px-3 py-2">
-            <Button variant="ghost" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              Prev
-            </Button>
             <span className="font-mono text-xs text-muted-foreground">
-              Page {page}
-              {numPages ? ` / ${numPages}` : ""}
+              {document.filename}
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPage((p) => (numPages ? Math.min(numPages, p + 1) : p + 1))}
-            >
-              Next
-            </Button>
+            {jumpSource ? (
+              <span className="rounded-full border border-secondary/40 bg-secondary/10 px-2 py-0.5 font-mono text-xs text-secondary">
+                Source highlighted
+              </span>
+            ) : null}
           </div>
-          {jumpSource ? (
-            <div className="rounded-xl border border-secondary/30 bg-secondary/10 p-3">
-              <p className="font-mono text-xs text-secondary">
-                Chunk {jumpSource.chunkIndex} · {jumpSource.filename}
-              </p>
-              <p className="mt-2 line-clamp-4 text-xs leading-5 text-muted-foreground">
-                {jumpSource.excerpt}
-              </p>
-            </div>
-          ) : null}
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-white/95 p-2">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-white/10 bg-white/95 p-2">
             <PdfDocumentViewer
               fileUrl={url}
-              page={page}
-              onLoadSuccess={(loadedPages) => {
-                setNumPages(loadedPages);
-                setPage((p) => Math.min(p, loadedPages));
-              }}
+              highlightText={jumpSource?.excerpt ?? null}
             />
           </div>
         </div>
