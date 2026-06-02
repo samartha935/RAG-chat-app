@@ -123,3 +123,273 @@
     outline-color: rgba(250, 204, 21, 1);
   }
 }
+
+/* ══════════════════════════════════════════════
+   Resizable panel drag handles
+   ══════════════════════════════════════════════ */
+
+.resize-handle {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 10;
+  transition: background 0.18s ease;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.08);
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.resize-handle:hover::after,
+.resize-handle.dragging::after {
+  background: var(--primary);
+}
+
+/* Vertical handle (between sidebar and main / chat and PDF) */
+.resize-handle-v {
+  width: 6px;
+  cursor: col-resize;
+  align-self: stretch;
+}
+
+.resize-handle-v::after {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 48px;
+}
+
+.resize-handle-v:hover::after,
+.resize-handle-v.dragging::after {
+  height: 64px;
+  width: 4px;
+}
+
+/* ══════════════════════════════════════════════
+   Markdown prose (Obsidian-style) for AI messages
+   ══════════════════════════════════════════════ */
+
+.markdown-prose {
+  line-height: 1.75;
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.markdown-prose h1,
+.markdown-prose h2,
+.markdown-prose h3,
+.markdown-prose h4,
+.markdown-prose h5,
+.markdown-prose h6 {
+  font-weight: 700;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.markdown-prose h1 { font-size: 1.5em; }
+.markdown-prose h2 { font-size: 1.3em; }
+.markdown-prose h3 { font-size: 1.15em; }
+.markdown-prose h4 { font-size: 1.05em; }
+
+.markdown-prose h2 {
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+}
+
+.markdown-prose p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.markdown-prose strong {
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.markdown-prose em {
+  font-style: italic;
+  color: rgb(200 196 214);
+}
+
+.markdown-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-prose a:hover {
+  color: var(--ring);
+}
+
+.markdown-prose blockquote {
+  border-left: 3px solid var(--primary);
+  padding-left: 1em;
+  margin: 0.75em 0;
+  color: var(--muted-foreground);
+  font-style: italic;
+  background: rgb(141 127 255 / 0.05);
+  border-radius: 0 6px 6px 0;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+}
+
+.markdown-prose blockquote p {
+  margin: 0.25em 0;
+}
+
+.markdown-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  color: #c7bfff;
+}
+
+.markdown-prose pre {
+  margin: 0.75em 0;
+  padding: 1em;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #0e0d15;
+  border: 1px solid rgb(255 255 255 / 0.06);
+}
+
+.markdown-prose pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.85em;
+  color: var(--foreground);
+  line-height: 1.6;
+}
+
+.markdown-prose ul,
+.markdown-prose ol {
+  margin: 0.5em 0;
+  padding-left: 1.6em;
+}
+
+.markdown-prose ul { list-style-type: disc; }
+.markdown-prose ol { list-style-type: decimal; }
+
+.markdown-prose ul ul { list-style-type: circle; }
+.markdown-prose ul ul ul { list-style-type: square; }
+
+.markdown-prose li {
+  margin: 0.2em 0;
+  line-height: 1.65;
+}
+
+.markdown-prose li > p {
+  margin: 0.1em 0;
+}
+
+.markdown-prose hr {
+  border: none;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  margin: 1.5em 0;
+}
+
+.markdown-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  font-size: 0.9em;
+}
+
+.markdown-prose th,
+.markdown-prose td {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  padding: 0.4em 0.75em;
+  text-align: left;
+}
+
+.markdown-prose th {
+  background: rgb(255 255 255 / 0.04);
+  font-weight: 600;
+}
+
+.markdown-prose tr:nth-child(even) {
+  background: rgb(255 255 255 / 0.02);
+}
+
+/* Inline citation references in text [1] */
+.markdown-prose .cite-ref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  font-weight: 600;
+  min-width: 1.4em;
+  height: 1.4em;
+  padding: 0 0.3em;
+  border-radius: 4px;
+  background: rgb(70 226 242 / 0.15);
+  color: var(--secondary);
+  border: 1px solid rgb(70 226 242 / 0.3);
+  vertical-align: super;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+  text-decoration: none;
+  line-height: 1;
+}
+
+.markdown-prose .cite-ref:hover {
+  background: rgb(70 226 242 / 0.3);
+  transform: scale(1.1);
+}
+
+/* ══════════════════════════════════════════════
+   PDF Zoom controls
+   ══════════════════════════════════════════════ */
+
+.pdf-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgb(14 13 21 / 0.95);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 9999px;
+  padding: 3px 10px;
+  backdrop-filter: blur(8px);
+}
+
+.pdf-zoom-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pdf-zoom-controls button:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--foreground);
+}
+
+.pdf-zoom-controls .zoom-level {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+  min-width: 3.2em;
+  text-align: center;
+  user-select: none;
+}

@@ -15,8 +15,9 @@ import {
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { DragEvent } from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import type { DragEvent, MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { markdownToHtml } from "@/lib/markdown";
 import { PdfUploadZone } from "@/components/pdf-upload-zone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -142,6 +143,61 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
   const [jumpSource, setJumpSource] = useState<RagSource | null>(null);
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
   const dragCounter = useRef(0);
+
+  // ── Resizable panel state ──
+  const SIDEBAR_MIN = 220;
+  const SIDEBAR_MAX = 400;
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [chatFraction, setChatFraction] = useState(0.55); // fraction of main area for chat
+  const resizingRef = useRef<"sidebar" | "split" | null>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+
+  // Global mouse handlers for resize drag
+  useEffect(() => {
+    const handleMouseMove = (e: globalThis.MouseEvent) => {
+      if (!resizingRef.current) return;
+      e.preventDefault();
+
+      if (resizingRef.current === "sidebar") {
+        const clamped = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX));
+        setSidebarWidth(clamped);
+      } else if (resizingRef.current === "split" && mainRef.current) {
+        const rect = mainRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const frac = Math.min(0.85, Math.max(0.15, x / rect.width));
+        setChatFraction(frac);
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (resizingRef.current) {
+        resizingRef.current = null;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  const startResizeSidebar = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = "sidebar";
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  const startResizeSplit = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = "split";
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
 
   const conversationsQuery = useQuery({
     queryKey: ["conversations"],
@@ -378,10 +434,13 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
           <p className="text-sm text-muted-foreground">Release to upload and index</p>
         </div>
       )}
+
+      {/* ── Sidebar (resizable on desktop) ── */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-[280px] border-r border-white/10 bg-[#111118]/95 p-4 backdrop-blur transition-transform lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 border-r border-white/10 bg-[#111118]/95 p-4 backdrop-blur transition-transform lg:static lg:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        style={{ width: sidebarWidth, minWidth: SIDEBAR_MIN, maxWidth: SIDEBAR_MAX }}
       >
         <div className="flex h-full flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -424,6 +483,13 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
         </div>
       </aside>
 
+      {/* ── Sidebar resize handle ── */}
+      <div
+        className="resize-handle resize-handle-v hidden lg:block"
+        onMouseDown={startResizeSidebar}
+      />
+
+      {/* ── Main area ── */}
       <main className="grid min-w-0 flex-1 grid-rows-[auto_1fr_auto]">
         <header className="flex items-center justify-between border-b border-white/10 bg-[#13121a]/80 px-4 py-3 backdrop-blur lg:px-6">
           <div className="flex items-center gap-3">
@@ -444,8 +510,13 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
           </div>
         </header>
 
-        <div className="grid min-h-0 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_440px] lg:p-6">
-          <section className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-[#16161e]/80">
+        {/* ── Resizable chat + PDF split ── */}
+        <div ref={mainRef} className="flex min-h-0 gap-0 p-4 lg:p-6">
+          {/* Chat section */}
+          <section
+            className="flex min-h-0 min-w-0 flex-col rounded-2xl border border-white/10 bg-[#16161e]/80"
+            style={{ width: `${chatFraction * 100}%`, flexShrink: 0 }}
+          >
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 lg:p-6">
               {messages.length === 0 ? (
                 <EmptyChat />
@@ -472,12 +543,21 @@ export function ChatWorkspace({ conversationId }: { conversationId: string }) {
             ) : null}
           </section>
 
-          <DocumentPanel
-            documents={documents}
-            currentDocument={currentDocument}
-            jumpSource={jumpSource}
-            onSelect={setSelectedDocument}
+          {/* ── Chat/PDF resize handle ── */}
+          <div
+            className="resize-handle resize-handle-v hidden lg:block mx-1"
+            onMouseDown={startResizeSplit}
           />
+
+          {/* PDF panel */}
+          <div className="hidden min-h-0 min-w-0 flex-1 lg:block">
+            <DocumentPanel
+              documents={documents}
+              currentDocument={currentDocument}
+              jumpSource={jumpSource}
+              onSelect={setSelectedDocument}
+            />
+          </div>
         </div>
 
         <form
@@ -552,7 +632,7 @@ function ConversationRow({
 
 function EmptyChat() {
   return (
-    <div className="flex h-full min-h-[360px] flex-col items-center justify-center text-center">
+    <div className="flex h-full min-h-90 flex-col items-center justify-center text-center">
       <div className="mb-4 flex size-14 items-center justify-center rounded-2xl border border-white/10 bg-primary/10">
         <Bot className="size-7 text-primary" />
       </div>
@@ -573,28 +653,79 @@ function MessageBubble({
   onSourceClick: (source: RagSource) => void;
 }) {
   const assistant = message.role === "assistant";
+  const bubbleRef = useRef<HTMLDivElement>(null);
+
+  // Parse which citation numbers the model actually used in the text (e.g. [1], [3])
+  const citedNumbers = useMemo(() => {
+    if (!assistant || !message.sources?.length) return new Set<number>();
+    const matches = message.content.matchAll(/\[(\d+)\]/g);
+    const nums = new Set<number>();
+    for (const m of matches) {
+      const n = parseInt(m[1]!, 10);
+      if (n >= 1 && n <= message.sources.length) nums.add(n);
+    }
+    return nums;
+  }, [assistant, message.content, message.sources]);
+
+  // Render markdown for assistant, plain for user
+  const renderedHtml = useMemo(() => {
+    if (!assistant) return null;
+    return markdownToHtml(message.content, !!message.sources?.length);
+  }, [assistant, message.content, message.sources?.length]);
+
+  // Handle clicks on inline citation refs
+  useEffect(() => {
+    const container = bubbleRef.current;
+    if (!container || !assistant) return;
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.classList.contains("cite-ref")) return;
+      const citeNum = parseInt(target.dataset.cite ?? "", 10);
+      if (!citeNum || !message.sources) return;
+      const source = message.sources[citeNum - 1];
+      if (source) onSourceClick(source);
+    };
+
+    container.addEventListener("click", handleClick);
+    return () => container.removeEventListener("click", handleClick);
+  }, [assistant, message.sources, onSourceClick]);
+
   return (
     <div className={`flex ${assistant ? "justify-start" : "justify-end"}`}>
       <div
+        ref={bubbleRef}
         className={`max-w-[82%] rounded-2xl border p-4 text-sm leading-6 ${
           assistant
             ? "rounded-bl-md border-primary/20 bg-primary/10"
             : "rounded-br-md border-white/10 bg-white/4.5"
         }`}
       >
-        <p className="whitespace-pre-wrap">{message.content}</p>
+        {assistant && renderedHtml ? (
+          <div
+            className="markdown-prose"
+            dangerouslySetInnerHTML={{ __html: renderedHtml }}
+          />
+        ) : (
+          <p className="whitespace-pre-wrap">{message.content}</p>
+        )}
         {message.sources?.length ? (
           <div className="mt-4 flex flex-wrap gap-2">
-            {message.sources.slice(0, 5).map((source, i) => (
-              <button
-                key={source.chunkId}
-                type="button"
-                onClick={() => onSourceClick(source)}
-                className="rounded-full border border-secondary/40 bg-secondary/10 px-2.5 py-1 font-mono text-xs text-secondary"
-              >
-                Source {i + 1} · {source.filename}
-              </button>
-            ))}
+            {message.sources.map((source, i) => {
+              const sourceNum = i + 1;
+              // Only show sources that the model actually referenced
+              if (citedNumbers.size > 0 && !citedNumbers.has(sourceNum)) return null;
+              return (
+                <button
+                  key={source.chunkId}
+                  type="button"
+                  onClick={() => onSourceClick(source)}
+                  className="rounded-full border border-secondary/40 bg-secondary/10 px-2.5 py-1 font-mono text-xs text-secondary transition-colors hover:bg-secondary/20"
+                >
+                  [{sourceNum}] {source.filename}
+                </button>
+              );
+            })}
           </div>
         ) : null}
       </div>
@@ -614,7 +745,7 @@ function DocumentPanel({
   onSelect: (document: DocumentSummary) => void;
 }) {
   return (
-    <aside className="hidden min-h-0 flex-col rounded-2xl border border-white/10 bg-[#16161e]/80 lg:flex">
+    <aside className="flex min-h-0 h-full flex-col rounded-2xl border border-white/10 bg-[#16161e]/80">
       <div className="border-b border-white/10 p-4">
         <p className="text-sm font-semibold">Source document</p>
         <p className="mt-1 text-xs text-muted-foreground">
@@ -685,7 +816,7 @@ function PdfPreview({
           </div>
         </div>
       ) : (
-        <div className="flex h-full min-h-[420px] items-center justify-center rounded-xl border border-dashed border-white/10 text-center text-sm text-muted-foreground">
+        <div className="flex h-full min-h-105 items-center justify-center rounded-xl border border-dashed border-white/10 text-center text-sm text-muted-foreground">
           PDF preview appears after upload.
         </div>
       )}

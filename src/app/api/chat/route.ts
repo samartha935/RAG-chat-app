@@ -46,7 +46,9 @@ function getLastUserText(messages: ModelMessage[]): string {
 
 function buildSystemPrompt(sources: RagSource[]): string {
   if (sources.length === 0) {
-    return `You are a helpful AI assistant. This conversation has no indexed PDF context yet, so answer normally from general knowledge when appropriate. If the user asks about an uploaded document, explain that there are no uploaded documents available to cite.`;
+    return `You are a helpful AI assistant. This conversation has no indexed PDF context yet, so answer normally from general knowledge when appropriate. If the user asks about an uploaded document, explain that there are no uploaded documents available to cite.
+
+Format your responses using markdown: use **bold** for emphasis, headings (## or ###) for sections, bullet lists for enumerations, \`code\` for technical terms, and > blockquotes when quoting. Structure your answers clearly.`;
   }
 
   const blocks = sources.map(
@@ -56,7 +58,16 @@ function buildSystemPrompt(sources: RagSource[]): string {
 
   return `You are a helpful AI assistant with optional PDF context.
 
-Use the retrieved PDF excerpts when they are relevant to the user's question. When you rely on PDF content, cite the matching excerpts using bracket numbers like [1].
+**Response formatting:** Always format your responses using Obsidian-style markdown:
+- Use **bold** for key terms and emphasis
+- Use headings (## or ###) to organize longer answers into sections
+- Use bullet lists or numbered lists for enumerations
+- Use \`inline code\` for technical terms, file names, or data values
+- Use > blockquotes when directly quoting from the document
+- Use tables when comparing information
+- Structure answers clearly and make them scannable
+
+**Citation rules:** When you rely on PDF content, cite using bracket numbers exactly matching the excerpt numbers below (e.g. [1], [2], [3]). Place citations inline right after the relevant sentence or claim. Only cite excerpts you actually use — do not cite all of them.
 
 If the user's question is general, conversational, or not related to the uploaded PDF, answer normally from general knowledge without forcing PDF citations.
 
